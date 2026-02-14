@@ -1,0 +1,24 @@
+# .gitignore
+# Data files
+data/raw/*
+data/processed/*
+*.csv
+*.parquet
+*.pkl
+
+# Model files
+models/saved/*
+*.h5
+*.joblib
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+
+# Logs
+logs/*.log
+
+# System
+.DS_Store
