@@ -413,6 +413,28 @@ Documenting failures is as important as successes:
 
 ---
 
+## 🎨 Interactive Demo
+
+We provide a Streamlit web interface for easy interaction:
+```bash
+# Terminal 1: Start API
+uvicorn src.api.main:app --reload --port 8000
+
+# Terminal 2: Start Streamlit
+streamlit run streamlit_app.py
+```
+
+Then open http://localhost:8501 in your browser.
+
+**Demo Features:**
+- Interactive user ID selection
+- Real-time recommendations
+- Score visualization
+- Strategy comparison
+- Health monitoring
+
+---
+
 ## 🛣️ Future Improvements
 
 - [ ] **Sequential modeling**: LSTM/Transformer on order sequences
