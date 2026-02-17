@@ -1,0 +1,58 @@
+# .dockerignore
+
+# Data files (too large)
+data/raw/*.csv
+!data/raw/products.csv
+data/raw/*.zip
+data/processed/*.parquet
+!data/processed/prior_orders.parquet
+data/features/user_product_features.csv
+data/features/user_department_features.csv
+
+# Notebooks
+notebooks/
+*.ipynb
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test files
+tests/
+.pytest_cache/
+
+# Documentation
+docs/
+README.md

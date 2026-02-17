@@ -145,6 +145,205 @@ uvicorn src.api.main:app --reload
 
 ---
 
+## 🚀 Deployment
+
+### System Requirements
+
+**Docker Deployment:**
+- Memory: 12GB+ recommended (due to large feature tables)
+- CPU: 4+ cores
+- Disk: 2GB
+
+**Why 12GB?** The app loads:
+- 206K user features
+- 50K product features  
+- 13M user-product interaction features (parquet)
+- LightGBM model with 500 trees
+
+**Production Optimization:**
+In a real production system, we'd use:
+- PostgreSQL/Redis for feature storage (query on-demand)
+- Feature store (Feast/Tecton) for real-time serving
+- Model serving framework (TensorFlow Serving / BentoML)
+- This would reduce memory to ~2GB
+
+### Local Development
+```bash
+# Recommended: run directly (no Docker overhead)
+uvicorn src.api.main:app --reload --port 8000
+# Memory usage: ~3-4GB
+```
+
+### Docker Deployment
+
+**Step 1: Configure Docker Resources**
+- Docker Desktop → Settings → Resources
+- Memory: 12GB minimum
+- Swap: 2GB
+
+**Step 2: Build and Run**
+```bash
+# Build image
+docker build -t instacart-recommender:v1 .
+
+# Run with docker-compose
+docker-compose up -d
+
+# Check status
+docker-compose ps
+docker-compose logs -f
+```
+---
+
+## 🔌 API Endpoints
+
+### Health Check
+Check if the API is running and models are loaded.
+```bash
+GET /health
+
+Response:
+{
+  "status": "healthy",
+  "model_loaded": true,
+  "model_version": "lgbm_baseline_v1",
+  "features_count": 42
+}
+```
+
+### Get Recommendations
+Get personalized product recommendations for a user.
+```bash
+POST /recommend
+
+Request Body:
+{
+  "user_id": 12345,        # User ID (required)
+  "k": 10,                 # Number of recommendations (default: 10)
+  "strategy": "auto"       # "auto", "model", or "popularity" (default: "auto")
+}
+
+Response:
+{
+  "user_id": 12345,
+  "recommendations": [
+    {
+      "product_id": 24852,
+      "product_name": "Banana",
+      "score": 0.85,
+      "reason": "Frequently purchased by you"
+    },
+    {
+      "product_id": 13176,
+      "product_name": "Bag of Organic Bananas",
+      "score": 0.78,
+      "reason": "Frequently purchased by you"
+    }
+    ...
+  ],
+  "strategy_used": "lightgbm_per_user_f1",
+  "user_type": "warm",      # "warm", "cold", or "new"
+  "latency_ms": 45.2
+}
+```
+
+**Strategy Options:**
+- `auto`: Automatically choose best strategy based on user history
+- `model`: Force LightGBM model prediction
+- `popularity`: Force popularity-based recommendations
+
+**User Types:**
+- `warm`: User with 5+ orders (uses model)
+- `cold`: User with 1-4 orders (blends model + popularity)
+- `new`: User with 0 orders (pure popularity)
+
+### Interactive Documentation
+FastAPI provides auto-generated interactive docs:
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+
+---
+
+## 💡 Usage Examples
+
+### Python
+```python
+import requests
+
+# Get recommendations for a user
+response = requests.post(
+    "http://localhost:8000/recommend",
+    json={"user_id": 1, "k": 5}
+)
+
+recommendations = response.json()
+print(f"User {recommendations['user_id']} recommendations:")
+for rec in recommendations['recommendations']:
+    print(f"  - {rec['product_name']}: {rec['score']:.2f}")
+```
+
+### cURL
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Get recommendations (warm user)
+curl -X POST "http://localhost:8000/recommend" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 1, "k": 5, "strategy": "auto"}'
+
+# Force popularity-based (useful for cold start testing)
+curl -X POST "http://localhost:8000/recommend" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 999999, "k": 5, "strategy": "popularity"}'
+```
+
+### JavaScript
+```javascript
+// Fetch recommendations
+async function getRecommendations(userId, k = 10) {
+  const response = await fetch('http://localhost:8000/recommend', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, k: k })
+  });
+  
+  return await response.json();
+}
+
+// Usage
+getRecommendations(1, 5).then(data => {
+  console.log(`Recommendations for user ${data.user_id}:`);
+  data.recommendations.forEach(rec => {
+    console.log(`  ${rec.product_name}: ${rec.score}`);
+  });
+});
+```
+
+### Response Time Analysis
+```python
+import requests
+import time
+
+# Benchmark API latency
+user_ids = [1, 10, 100, 1000]
+latencies = []
+
+for user_id in user_ids:
+    start = time.time()
+    response = requests.post(
+        "http://localhost:8000/recommend",
+        json={"user_id": user_id, "k": 10}
+    )
+    latency = (time.time() - start) * 1000
+    latencies.append(latency)
+    
+    print(f"User {user_id}: {latency:.1f}ms (API reports: {response.json()['latency_ms']:.1f}ms)")
+
+print(f"\nAverage latency: {sum(latencies)/len(latencies):.1f}ms")
+```
+---
+
 ## 📁 Project Structure
 ```
 instacart-recommendation-system/
