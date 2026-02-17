@@ -1,131 +1,121 @@
-import pandas as pd
-import numpy as np
-from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
+"""Baseline models and evaluation helpers for reorder prediction."""
+
+from __future__ import annotations
+
+from typing import Any
+
 import lightgbm as lgb
+import pandas as pd
+from sklearn.metrics import f1_score, precision_score, recall_score, roc_auc_score
+
+DEFAULT_TOP_PRODUCTS = 1000
+DEFAULT_NUM_BOOST_ROUND = 500
+DEFAULT_EARLY_STOPPING_ROUNDS = 50
+
 
 class PopularityBaseline:
-    """
-    Simple baseline: recommend most popular products
-    """
-    
-    def __init__(self):
-        self.top_products = None
-        
-    def fit(self, train_df):
-        """
-        Find top products by reorder rate
-        """
+    """Recommend globally popular products as a non-personalized baseline."""
+
+    def __init__(self, top_products_count: int = DEFAULT_TOP_PRODUCTS) -> None:
+        self.top_products_count = top_products_count
+        self.top_products: set[int] | None = None
+
+    def fit(self, train_df: pd.DataFrame) -> "PopularityBaseline":
+        """Select top products by reorder volume."""
         print("Training Popularity Baseline...")
-        
-        # Calculate product popularity
-        product_stats = train_df.groupby('product_id').agg({
-            'reordered': ['sum', 'count', 'mean']
-        }).reset_index()
-        
-        product_stats.columns = ['product_id', 'reorders', 'total', 'reorder_rate']
-        
-        # Sort by number of reorders
-        product_stats = product_stats.sort_values('reorders', ascending=False)
-        
-        self.top_products = set(product_stats.head(1000)['product_id'].values)
-        
-        print(f"✅ Selected top {len(self.top_products)} products")
-        
+
+        product_stats = train_df.groupby("product_id").agg(
+            {"reordered": ["sum", "count", "mean"]}
+        ).reset_index()
+        product_stats.columns = ["product_id", "reorders", "total", "reorder_rate"]
+        product_stats = product_stats.sort_values("reorders", ascending=False)
+
+        self.top_products = set(
+            product_stats.head(self.top_products_count)["product_id"].values
+        )
+
+        print(f"Selected top {len(self.top_products)} products")
         return self
-    
-    def predict(self, test_df):
-        """
-        Predict: return 1 if product is in top products
-        """
-        predictions = test_df['product_id'].isin(self.top_products).astype(int)
-        return predictions
+
+    def predict(self, test_df: pd.DataFrame) -> pd.Series:
+        """Predict a reorder label based on whether product is globally popular."""
+        if self.top_products is None:
+            raise ValueError("Call fit() before predict().")
+        return test_df["product_id"].isin(self.top_products).astype(int)
 
 
 class UserHeuristicBaseline:
-    """
-    Heuristic: predict reorder if:
-    - User bought it many times before
-    - User bought it recently
-    """
-    
-    def __init__(self, times_threshold=3, recency_threshold=5):
+    """Simple heuristic baseline based on frequency and recency cutoffs."""
+
+    def __init__(self, times_threshold: int = 3, recency_threshold: int = 5) -> None:
         self.times_threshold = times_threshold
         self.recency_threshold = recency_threshold
-        
-    def fit(self, train_df):
-        """No training needed for heuristic"""
-        print(f"Using heuristic thresholds:")
+
+    def fit(self, train_df: pd.DataFrame) -> "UserHeuristicBaseline":
+        """Keep threshold parameters; no statistical training is performed."""
+        _ = train_df
+        print("Using heuristic thresholds:")
         print(f"  - Times bought >= {self.times_threshold}")
         print(f"  - Orders since last <= {self.recency_threshold}")
         return self
-    
-    def predict(self, test_df):
-        """
-        Predict: return 1 if item was bought frequently and recently
-        """
-        predictions = (
-            (test_df['up_times_bought'] >= self.times_threshold) &
-            (test_df['up_orders_since_last'] <= self.recency_threshold)
+
+    def predict(self, test_df: pd.DataFrame) -> pd.Series:
+        """Predict reorder when both frequency and recency rules are satisfied."""
+        return (
+            (test_df["up_times_bought"] >= self.times_threshold)
+            & (test_df["up_orders_since_last"] <= self.recency_threshold)
         ).astype(int)
-        
-        return predictions
 
 
 class LGBMBaseline:
-    """
-    LightGBM model - our main baseline
-    """
-    
-    def __init__(self, params=None):
-        if params is None:
-            self.params = {
-                'objective': 'binary',
-                'metric': 'auc',
-                'boosting_type': 'gbdt',
-                'num_leaves': 31,
-                'learning_rate': 0.05,
-                'feature_fraction': 0.9,
-                'bagging_fraction': 0.8,
-                'bagging_freq': 5,
-                'verbose': -1,
-                'min_child_samples': 20,
-                'max_depth': 8,
-            }
-        else:
-            self.params = params
-            
-        self.model = None
-        self.feature_cols = None
-        
-    def fit(self, train_df, val_df=None, num_boost_round=500, early_stopping_rounds=50):
-        """
-        Train LightGBM model
-        """
+    """LightGBM baseline model used in production and experiments."""
+
+    def __init__(self, params: dict[str, Any] | None = None) -> None:
+        self.params = params or {
+            "objective": "binary",
+            "metric": "auc",
+            "boosting_type": "gbdt",
+            "num_leaves": 31,
+            "learning_rate": 0.05,
+            "feature_fraction": 0.9,
+            "bagging_fraction": 0.8,
+            "bagging_freq": 5,
+            "verbose": -1,
+            "min_child_samples": 20,
+            "max_depth": 8,
+        }
+        self.model: lgb.Booster | None = None
+        self.feature_cols: list[str] | None = None
+
+    def fit(
+        self,
+        train_df: pd.DataFrame,
+        val_df: pd.DataFrame | None = None,
+        num_boost_round: int = DEFAULT_NUM_BOOST_ROUND,
+        early_stopping_rounds: int = DEFAULT_EARLY_STOPPING_ROUNDS,
+    ) -> "LGBMBaseline":
+        """Train a LightGBM model on train_df with optional validation set."""
         print("Training LightGBM model...")
-        
-        # Define feature columns
-        self.feature_cols = [col for col in train_df.columns 
-                            if col not in ['user_id', 'product_id', 'reordered']]
-        
+
+        self.feature_cols = [
+            col for col in train_df.columns if col not in ["user_id", "product_id", "reordered"]
+        ]
         print(f"  Using {len(self.feature_cols)} features")
-        
-        # Prepare data
-        X_train = train_df[self.feature_cols]
-        y_train = train_df['reordered']
-        
-        train_data = lgb.Dataset(X_train, label=y_train)
-        
+
+        x_train = train_df[self.feature_cols]
+        y_train = train_df["reordered"]
+        train_data = lgb.Dataset(x_train, label=y_train)
+
         valid_sets = [train_data]
-        valid_names = ['train']
-        
+        valid_names = ["train"]
+
         if val_df is not None:
-            X_val = val_df[self.feature_cols]
-            y_val = val_df['reordered']
-            val_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
+            x_val = val_df[self.feature_cols]
+            y_val = val_df["reordered"]
+            val_data = lgb.Dataset(x_val, label=y_val, reference=train_data)
             valid_sets.append(val_data)
-            valid_names.append('valid')
-        
-        # Train
+            valid_names.append("valid")
+
         self.model = lgb.train(
             self.params,
             train_data,
@@ -134,72 +124,57 @@ class LGBMBaseline:
             valid_names=valid_names,
             callbacks=[
                 lgb.early_stopping(stopping_rounds=early_stopping_rounds),
-                lgb.log_evaluation(period=50)
-            ]
+                lgb.log_evaluation(period=50),
+            ],
         )
-        
-        print(f"✅ Training completed. Best iteration: {self.model.best_iteration}")
-        
+
+        print(f"Training completed. Best iteration: {self.model.best_iteration}")
         return self
-    
-    def predict(self, test_df):
-        """
-        Predict probabilities
-        """
-        X_test = test_df[self.feature_cols]
-        predictions = self.model.predict(X_test, num_iteration=self.model.best_iteration)
-        return predictions
-    
-    def get_feature_importance(self, importance_type='gain'):
-        """
-        Get feature importance
-        """
+
+    def predict(self, test_df: pd.DataFrame) -> pd.Series:
+        """Predict reorder probabilities for each row in test_df."""
+        if self.model is None or self.feature_cols is None:
+            raise ValueError("Call fit() before predict().")
+        x_test = test_df[self.feature_cols]
+        return self.model.predict(x_test, num_iteration=self.model.best_iteration)
+
+    def get_feature_importance(self, importance_type: str = "gain") -> pd.DataFrame:
+        """Return feature importances sorted descending."""
+        if self.model is None or self.feature_cols is None:
+            raise ValueError("Call fit() before get_feature_importance().")
+
         importance = self.model.feature_importance(importance_type=importance_type)
-        feature_importance = pd.DataFrame({
-            'feature': self.feature_cols,
-            'importance': importance
-        }).sort_values('importance', ascending=False)
-        
-        return feature_importance
+        return (
+            pd.DataFrame({"feature": self.feature_cols, "importance": importance})
+            .sort_values("importance", ascending=False)
+            .reset_index(drop=True)
+        )
 
 
-def evaluate_model(y_true, y_pred, y_prob=None, threshold=0.5):
-    """
-    Evaluate model performance
-    
-    Args:
-        y_true: true labels
-        y_pred: predicted labels (0/1)
-        y_prob: predicted probabilities (optional, for AUC)
-        threshold: threshold for converting probabilities to labels
-    """
-    # Convert probabilities to labels if needed
+def evaluate_model(
+    y_true: pd.Series,
+    y_pred: pd.Series,
+    y_prob: pd.Series | None = None,
+    threshold: float = 0.5,
+) -> dict[str, float]:
+    """Compute precision/recall/F1 and optional AUC metrics."""
     if y_prob is not None:
         y_pred = (y_prob >= threshold).astype(int)
-    
-    # Calculate metrics
-    precision = precision_score(y_true, y_pred)
-    recall = recall_score(y_true, y_pred)
-    f1 = f1_score(y_true, y_pred)
-    
+
     metrics = {
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
+        "precision": precision_score(y_true, y_pred),
+        "recall": recall_score(y_true, y_pred),
+        "f1": f1_score(y_true, y_pred),
     }
-    
-    # Add AUC if probabilities available
+
     if y_prob is not None:
-        auc = roc_auc_score(y_true, y_prob)
-        metrics['auc'] = auc
-    
+        metrics["auc"] = roc_auc_score(y_true, y_prob)
+
     return metrics
 
 
-def print_metrics(metrics, model_name="Model"):
-    """
-    Pretty print metrics
-    """
+def print_metrics(metrics: dict[str, float], model_name: str = "Model") -> None:
+    """Pretty-print metrics for console-based experiments."""
     print(f"\n{model_name} Performance:")
     print("=" * 50)
     for metric, value in metrics.items():

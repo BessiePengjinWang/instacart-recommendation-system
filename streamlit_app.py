@@ -4,7 +4,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import plotly.express as px
-from pathlib import Path
 
 # Page config
 st.set_page_config(

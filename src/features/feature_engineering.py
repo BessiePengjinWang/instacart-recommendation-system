@@ -1,19 +1,24 @@
-import pandas as pd
+"""Feature engineering pipeline for user, product, and interaction features."""
+
+from __future__ import annotations
+
 import numpy as np
-from pathlib import Path
+import pandas as pd
+
+TOP_PRODUCT_CUTOFF = 100
 
 class FeatureEngineer:
     """
     Create features for user-product pairs
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.user_features = None
         self.product_features = None
         self.dept_features = None
         self.aisle_features = None
         
-    def create_user_features(self, prior_data):
+    def create_user_features(self, prior_data: pd.DataFrame) -> pd.DataFrame:
         """
         Create user-level features from prior orders
         """
@@ -56,7 +61,7 @@ class FeatureEngineer:
         self.user_features = user_stats
         return user_stats
     
-    def create_product_features(self, prior_data):
+    def create_product_features(self, prior_data: pd.DataFrame) -> pd.DataFrame:
         """
         Create product-level features
         """
@@ -79,9 +84,9 @@ class FeatureEngineer:
             ascending=False, method='dense'
         )
         
-        # NEW: Is top 100 product
+        # NEW: Is top product based on configured cutoff
         product_stats['product_in_top_100'] = (
-            product_stats['product_rank'] <= 100
+            product_stats['product_rank'] <= TOP_PRODUCT_CUTOFF
         ).astype(int)
         
         # NEW: Product orders ratio (relative popularity)
@@ -96,7 +101,11 @@ class FeatureEngineer:
         self.product_features = product_stats
         return product_stats
     
-    def create_department_aisle_features(self, prior_data, products_df):
+    def create_department_aisle_features(
+        self,
+        prior_data: pd.DataFrame,
+        products_df: pd.DataFrame,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Create department and aisle level features
         
@@ -143,7 +152,7 @@ class FeatureEngineer:
         
         return dept_stats, aisle_stats
     
-    def create_user_product_features(self, prior_data):
+    def create_user_product_features(self, prior_data: pd.DataFrame) -> pd.DataFrame:
         """
         Create user-product interaction features
         
@@ -196,7 +205,8 @@ class FeatureEngineer:
         # NEW: Order rate since first purchase
         up_stats['up_order_rate_since_first'] = np.where(
             up_stats['user_max_order_number'] - up_stats['up_first_order_number'] > 0,
-            up_stats['up_times_bought'] / (up_stats['user_max_order_number'] - up_stats['up_first_order_number'] + 1),
+            up_stats['up_times_bought']
+            / (up_stats['user_max_order_number'] - up_stats['up_first_order_number'] + 1),
             up_stats['up_times_bought']
         )
         
@@ -221,7 +231,11 @@ class FeatureEngineer:
         
         return up_stats
     
-    def create_user_department_features(self, prior_data, products_df):
+    def create_user_department_features(
+        self,
+        prior_data: pd.DataFrame,
+        products_df: pd.DataFrame,
+    ) -> pd.DataFrame:
         """
         Create user-department interaction features
         
@@ -253,7 +267,7 @@ class FeatureEngineer:
         
         return user_dept_stats
     
-    def create_order_streak_features(self, prior_data):
+    def create_order_streak_features(self, prior_data: pd.DataFrame) -> pd.DataFrame:
         """
         Create order streak features (consecutive purchases)
         
@@ -304,7 +318,11 @@ class FeatureEngineer:
         
         return streak_df
     
-    def create_all_features(self, prior_data, products_df=None):
+    def create_all_features(
+        self,
+        prior_data: pd.DataFrame,
+        products_df: pd.DataFrame | None = None,
+    ) -> tuple[pd.DataFrame, ...]:
         """
         Create all feature sets
         
@@ -353,7 +371,16 @@ class FeatureEngineer:
             print(f"Department features: {len(dept_feat.columns) - 1}")
             print(f"Aisle features: {len(aisle_feat.columns) - 1}")
             print(f"User-Department features: {len(user_dept_feat.columns) - 2}")
-            print(f"\nTotal features: {len(user_feat.columns) + len(product_feat.columns) + len(up_feat.columns) + len(dept_feat.columns) + len(aisle_feat.columns) + len(user_dept_feat.columns) - 7}")
+            total_features = (
+                len(user_feat.columns)
+                + len(product_feat.columns)
+                + len(up_feat.columns)
+                + len(dept_feat.columns)
+                + len(aisle_feat.columns)
+                + len(user_dept_feat.columns)
+                - 7
+            )
+            print(f"\nTotal features: {total_features}")
             
             return (user_feat, product_feat, up_feat, 
                     dept_feat, aisle_feat, user_dept_feat)
@@ -364,7 +391,10 @@ class FeatureEngineer:
             print(f"User features: {len(user_feat.columns) - 1}")
             print(f"Product features: {len(product_feat.columns) - 1}")
             print(f"User-Product features: {len(up_feat.columns) - 2}")
-            print(f"\nTotal features: {len(user_feat.columns) + len(product_feat.columns) + len(up_feat.columns) - 4}")
+            print(
+                "\nTotal features: "
+                f"{len(user_feat.columns) + len(product_feat.columns) + len(up_feat.columns) - 4}"
+            )
             
             return user_feat, product_feat, up_feat
 

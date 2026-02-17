@@ -1,3 +1,5 @@
+"""Pydantic request/response schemas for the recommendation API."""
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
